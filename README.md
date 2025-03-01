@@ -157,5 +157,6 @@ graph TD;
     C -->|SQL Queries| D[Data Analysis];
 ```
 
-🚀 **This completes the pipeline setup!** ✅
+This completes the pipeline setup!
 
+Now check the dataset in bigquery and check the recommendation table within the project.
