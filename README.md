@@ -220,5 +220,13 @@ bq query --use_legacy_sql=false \
 
 The architecture is simple and explained below -
 
+```mermaid
+graph TD;
+    A[GCS Storage] -->|CSV Files| B[Google Cloud Dataflow];
+    B -->|Processed Data| C[BigQuery - recommendations Table];
+    C -->|SQL Queries| D[Data Analysis];
+    B -->|Logs| E[Cloud Logging];
+
+
 
 
