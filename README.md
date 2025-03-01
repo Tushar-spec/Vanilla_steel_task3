@@ -74,9 +74,105 @@ bq query --use_legacy_sql=false \
 ```
 
 ---
+## building a data pipeline, I have used visual code studio to make a .py file which is ingestion.py, the code is attached below -
 
-## 💟 Step 3: Download & Run `ingestion.py` in Cloud Shell
-### **1️⃣ Download the Script from GCS**
+import apache_beam as beam
+from apache_beam.options.pipeline_options import PipelineOptions
+import csv
+import io
+import pandas as pd
+from google.cloud import storage, bigquery
+
+# GCP Configurations
+PROJECT_ID = "vanilla-steel-task-2"  # Replace with your actual GCP Project ID
+BUCKET_NAME = "vanila_steel_task_2"
+DATASET_ID = "vanila_steel_dataset_1"  # Updated dataset name
+TABLE_ID = "recommendations"
+
+# GCS file paths
+BUYER_PREFERENCES_FILE = f"gs://{BUCKET_NAME}/resources/task_3/buyer_preferences.csv"
+SUPPLIER_DATA1_FILE = f"gs://{BUCKET_NAME}/resources/task_3/supplier_data1.csv"
+SUPPLIER_DATA2_FILE = f"gs://{BUCKET_NAME}/resources/task_3/supplier_data2.csv"
+
+class ReadCSVFile(beam.DoFn):
+    """Reads CSV file from GCS and returns a list of dictionaries."""
+    def __init__(self, file_path):
+        self.file_path = file_path
+
+    def process(self, element):
+        client = storage.Client()
+        bucket = client.bucket(BUCKET_NAME)
+        blob = bucket.blob(self.file_path.split("/")[-1])  # Extract filename
+        content = blob.download_as_text()
+
+        # Read CSV into a list of dictionaries
+        reader = csv.DictReader(io.StringIO(content))
+        return [row for row in reader]
+
+class MatchSupplierWithBuyer(beam.DoFn):
+    """Matches supplier materials with buyer preferences."""
+    def process(self, element):
+        buyer_data, supplier_data = element
+
+        # Convert list of dicts to DataFrame
+        buyer_df = pd.DataFrame(buyer_data)
+        supplier_df = pd.DataFrame(supplier_data)
+
+        # Standardize column names
+        buyer_df.columns = buyer_df.columns.str.lower().str.replace(" ", "_")
+        supplier_df.columns = supplier_df.columns.str.lower().str.replace(" ", "_")
+
+        # Merge supplier datasets
+        merged_df = buyer_df.merge(supplier_df, on='material_type', how='inner')
+
+        # Generate recommendation table
+        recommendations = merged_df[["buyer_id", "supplier_id", "material_type", "price", "availability"]]
+
+        return recommendations.to_dict(orient="records")
+
+class WriteToBigQuery(beam.DoFn):
+    """Writes the output data to BigQuery."""
+    def process(self, element):
+        client = bigquery.Client()
+        table_ref = f"{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}"
+
+        job = client.insert_rows_json(table_ref, [element])
+        if job:
+            print(f"Error inserting row: {job}")
+        return
+
+def run():
+    """Runs the Apache Beam pipeline."""
+    options = PipelineOptions(
+        runner="DataflowRunner",  # Change to 'DirectRunner' for local testing
+        project=PROJECT_ID,
+        temp_location=f"gs://{BUCKET_NAME}/resources/task_3/temp",
+        region="us-central1",
+        staging_location=f"gs://{BUCKET_NAME}/resources/task_3/staging"
+    )
+
+    with beam.Pipeline(options=options) as p:
+        buyer_prefs = p | "Read Buyer Preferences" >> beam.ParDo(ReadCSVFile(BUYER_PREFERENCES_FILE))
+        supplier_data1 = p | "Read Supplier Data 1" >> beam.ParDo(ReadCSVFile(SUPPLIER_DATA1_FILE))
+        supplier_data2 = p | "Read Supplier Data 2" >> beam.ParDo(ReadCSVFile(SUPPLIER_DATA2_FILE))
+
+        supplier_data = (supplier_data1, supplier_data2) | beam.Flatten()
+
+        recommendations = (
+            (buyer_prefs, supplier_data)
+            | "Match Suppliers with Buyers" >> beam.ParDo(MatchSupplierWithBuyer())
+        )
+
+        recommendations | "Write to BigQuery" >> beam.ParDo(WriteToBigQuery())
+
+if __name__ == "__main__":
+    run()
+
+save and upload this file to gcp cloud, and make sure that all the necessary libraries are installed.
+
+
+## Run `ingestion.py` in Cloud Shell
+### **1️⃣ Download the Script from GCP Bucket**
 ```sh
 gsutil cp gs://vanila_steel_task_2/resources/task_3/ingestion.py ~/
 ```
@@ -122,34 +218,7 @@ bq query --use_legacy_sql=false \
 
 ---
 
-## 📱 Step 8: Monitor & Debug (If Needed)
-```sh
-gcloud dataflow jobs list  # Check running jobs
-gcloud logging read "resource.type=dataflow_step" --limit 50  # Check logs
-bq show --format=prettyjson vanila_steel_dataset_1.recommendations  # Verify schema
-```
+The architecture is simple and explained below -
 
----
 
-## 🛢 Step 9: Cleanup (Optional)
-```sh
-gsutil rm -r gs://vanila_steel_task_2/resources/task_3/temp/
-gcloud dataflow jobs list  # Find the Job ID
-gcloud dataflow jobs cancel JOB_ID
-```
-
----
-
-## ✅ Final Summary
-✔ **Uploaded CSV files to `gs://vanila_steel_task_2/resources/task_3/`**  
-✔ **Created BigQuery dataset (`vanila_steel_dataset_1`) and table (`recommendations`)**  
-✔ **Downloaded `ingestion.py` and installed dependencies**  
-✔ **Authenticated Google Cloud & set the correct project**  
-✔ **Ran the Python script (`ingestion.py`)**  
-✔ **Verified data in BigQuery (`vanila_steel_dataset_1.recommendations`)**  
-✔ **Monitored logs & debugged errors**  
-✔ **Cleaned up temporary files (if needed)**  
-
-🚀 **Now your Dataflow pipeline is fully automated on GCP!** 🎉  
-Let me know if you need help! 😊
 
