@@ -72,33 +72,30 @@ bq query --use_legacy_sql=false \
 
 ---
 
-## 🏗 **Building the Data Pipeline**
-The Python script **`ingestion.py`** is developed in **Visual Studio Code** and is attached below:
+### Ingestion Script in Python
+The Python script `ingestion.py` developed in Visual Studio Code is crucial for this pipeline. It processes and writes data to BigQuery.
 
-```python
+```
 import apache_beam as beam
 from apache_beam.options.pipeline_options import PipelineOptions, GoogleCloudOptions, SetupOptions
 import csv
 from io import StringIO
 import logging
 
-# Set up basic configuration for logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s: %(levelname)s: %(message)s')
 
-# GCP Configurations
-PROJECT_ID = "vanilla-steel-task-2"
-BUCKET_NAME = "vanila_steel_task_2"
-DATASET_ID = "vanila_steel_dataset_1"
-TABLE_ID = "recommendations"
+PROJECT_ID = 'vanilla-steel-task-2'
+BUCKET_NAME = 'vanila_steel_task_2'
+DATASET_ID = 'vanila_steel_dataset_1'
+TABLE_ID = 'recommendations'
 
 def parse_csv(line):
-    """ Parse CSV lines into dictionaries. """
     try:
         reader = csv.DictReader(StringIO(line), delimiter=',')
-        return next(reader)  # Return the first row from the reader
+        return next(reader)
     except Exception as e:
-        logging.error(f"Failed to parse CSV line: {line} - Error: {e}")
-        return None  # Return None to filter out this line in the pipeline
+        logging.error(f'Failed to parse CSV line: {line} - Error: {e}')
+        return None
 
 def run(argv=None):
     pipeline_options = PipelineOptions(argv)
@@ -125,15 +122,6 @@ def run(argv=None):
 
 if __name__ == '__main__':
     run()
-
 ```
 
----
-
-```
-
-This completes the pipeline setup!
-
-Now check the dataset in bigquery and check the recommendation table within the project.
-
-Authenticate your project on google cloud shell, and run the script using this command `python ingestion.py`I have also provide the entire script on the resources repository, once this is running check the job in clouddata flow.
+Authenticate your project on Google Cloud Shell and run the script using `python ingestion.py`. The entire script is also provided in the resources repository. Once running, check the job in Cloud Dataflow and inspect the dataset in BigQuery.
