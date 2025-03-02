@@ -149,12 +149,6 @@ if __name__ == "__main__":
 
 ---
 
-## **Architecture Diagram**
-```mermaid
-graph TD;
-    A[GCS Storage] -->|CSV Files| B[Google Cloud Dataflow];
-    B -->|Processed Data| C[BigQuery - recommendations Table];
-    C -->|SQL Queries| D[Data Analysis];
 ```
 
 This completes the pipeline setup!
