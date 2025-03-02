@@ -1,4 +1,4 @@
-# Google Cloud Dataflow Pipeline for Matching Suppliers with Buyer Preferences
+# Pipeline for Matching Suppliers with Buyer Preferences
 
 ## **Task 3**
 ### **Objective:** Match supplier materials to buyer preferences and create a recommendation table.
