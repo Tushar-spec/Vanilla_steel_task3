@@ -77,11 +77,13 @@ The Python script **`ingestion.py`** is developed in **Visual Studio Code** and 
 
 ```python
 import apache_beam as beam
-from apache_beam.options.pipeline_options import PipelineOptions
+from apache_beam.options.pipeline_options import PipelineOptions, GoogleCloudOptions, SetupOptions
 import csv
-import io
-import pandas as pd
-from google.cloud import storage, bigquery
+from io import StringIO
+import logging
+
+# Set up basic configuration for logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s: %(levelname)s: %(message)s')
 
 # GCP Configurations
 PROJECT_ID = "vanilla-steel-task-2"
@@ -89,62 +91,41 @@ BUCKET_NAME = "vanila_steel_task_2"
 DATASET_ID = "vanila_steel_dataset_1"
 TABLE_ID = "recommendations"
 
-# GCS file paths
-BUYER_PREFERENCES_FILE = f"gs://{BUCKET_NAME}/resources/task_3/buyer_preferences.csv"
-SUPPLIER_DATA1_FILE = f"gs://{BUCKET_NAME}/resources/task_3/supplier_data1.csv"
-SUPPLIER_DATA2_FILE = f"gs://{BUCKET_NAME}/resources/task_3/supplier_data2.csv"
+def parse_csv(line):
+    """ Parse CSV lines into dictionaries. """
+    try:
+        reader = csv.DictReader(StringIO(line), delimiter=',')
+        return next(reader)  # Return the first row from the reader
+    except Exception as e:
+        logging.error(f"Failed to parse CSV line: {line} - Error: {e}")
+        return None  # Return None to filter out this line in the pipeline
 
-class ReadCSVFile(beam.DoFn):
-    def __init__(self, file_path):
-        self.file_path = file_path
+def run(argv=None):
+    pipeline_options = PipelineOptions(argv)
+    google_cloud_options = pipeline_options.view_as(GoogleCloudOptions)
+    google_cloud_options.project = PROJECT_ID
+    google_cloud_options.job_name = 'ingestion-job'
+    google_cloud_options.region = 'us-central1'
+    google_cloud_options.staging_location = f'gs://{BUCKET_NAME}/staging'
+    google_cloud_options.temp_location = f'gs://{BUCKET_NAME}/temp'
+    pipeline_options.view_as(SetupOptions).save_main_session = True
 
-    def process(self, element):
-        client = storage.Client()
-        bucket = client.bucket(BUCKET_NAME)
-        blob = bucket.blob(self.file_path.split("/")[-1])
-        content = blob.download_as_text()
-        reader = csv.DictReader(io.StringIO(content))
-        return [row for row in reader]
+    with beam.Pipeline(options=pipeline_options) as p:
+        raw_data = (p
+                    | 'Read CSV File' >> beam.io.ReadFromText(f'gs://{BUCKET_NAME}/resources/task_3/data.csv')
+                    | 'Parse CSV Lines' >> beam.Map(parse_csv)
+                    | 'Filter None Values' >> beam.Filter(lambda x: x is not None))
 
-class MatchSupplierWithBuyer(beam.DoFn):
-    def process(self, element):
-        buyer_data, supplier_data = element
-        buyer_df = pd.DataFrame(buyer_data)
-        supplier_df = pd.DataFrame(supplier_data)
-        buyer_df.columns = buyer_df.columns.str.lower().str.replace(" ", "_")
-        supplier_df.columns = supplier_df.columns.str.lower().str.replace(" ", "_")
-        merged_df = buyer_df.merge(supplier_df, on='material_type', how='inner')
-        recommendations = merged_df[["buyer_id", "supplier_id", "material_type", "price", "availability"]]
-        return recommendations.to_dict(orient="records")
+        raw_data | 'Write to BigQuery' >> beam.io.WriteToBigQuery(
+            f'{PROJECT_ID}:{DATASET_ID}.{TABLE_ID}',
+            schema='SCHEMA_AUTODETECT',
+            create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED,
+            write_disposition=beam.io.BigQueryDisposition.WRITE_APPEND
+        )
 
-class WriteToBigQuery(beam.DoFn):
-    def process(self, element):
-        client = bigquery.Client()
-        table_ref = f"{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}"
-        job = client.insert_rows_json(table_ref, [element])
-        if job:
-            print(f"Error inserting row: {job}")
-        return
-
-def run():
-    options = PipelineOptions(
-        runner="DataflowRunner",
-        project=PROJECT_ID,
-        temp_location=f"gs://{BUCKET_NAME}/resources/task_3/temp",
-        region="us-central1",
-        staging_location=f"gs://{BUCKET_NAME}/resources/task_3/staging"
-    )
-
-    with beam.Pipeline(options=options) as p:
-        buyer_prefs = p | "Read Buyer Preferences" >> beam.ParDo(ReadCSVFile(BUYER_PREFERENCES_FILE))
-        supplier_data1 = p | "Read Supplier Data 1" >> beam.ParDo(ReadCSVFile(SUPPLIER_DATA1_FILE))
-        supplier_data2 = p | "Read Supplier Data 2" >> beam.ParDo(ReadCSVFile(SUPPLIER_DATA2_FILE))
-        supplier_data = (supplier_data1, supplier_data2) | beam.Flatten()
-        recommendations = ((buyer_prefs, supplier_data) | "Match Suppliers with Buyers" >> beam.ParDo(MatchSupplierWithBuyer()))
-        recommendations | "Write to BigQuery" >> beam.ParDo(WriteToBigQuery())
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     run()
+
 ```
 
 ---
