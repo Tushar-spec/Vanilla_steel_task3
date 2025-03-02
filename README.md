@@ -135,3 +135,5 @@ if __name__ == '__main__':
 This completes the pipeline setup!
 
 Now check the dataset in bigquery and check the recommendation table within the project.
+
+Authenticate your project on google cloud shell, and run the script using this command `python ingestion.py`I have also provide the entire script on the resources repository, once this is running check the job in clouddata flow.
